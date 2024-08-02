@@ -1,5 +1,6 @@
 #include <tins/tins.h>
 #include <chrono>
+#include <json/json.h>
 
 #include "packet_sniff.h"
 
@@ -8,8 +9,7 @@ using namespace Tins;
 
 typedef Dot11::address_type address_type;
 
-MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0) {
-    // time_minheap = priority_queue<pair<address_type, time_point<high_resolution_clock>>, vector<pair<address_type, time_point<high_resolution_clock>>>, MySniffer>(*this);
+MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0), rate(0), active_user_number(0), writer("/home/litonglab/Downloads/sniffer_records.pcap", DataLinkType<RadioTap>()) {
     SnifferConfiguration config;
     config.set_immediate_mode(true);
     config.set_promisc_mode(true);
@@ -21,8 +21,16 @@ MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0) {
 }
 
 MySniffer::~MySniffer() {
+    if (rate_fs.is_open())
+        rate_fs.close();
+    if (users_fs.is_open())
+        users_fs.close();
+    if (occupancy_fs.is_open())
+        occupancy_fs.close();
+#ifdef DEBUG
     for (auto i = duration_records.begin(); i != duration_records.end(); i++) 
-        cout << i->addr << " last " << duration_cast<chrono::microseconds>(i->end - i->start).count() << " us." << endl;
+        cout << i->addr << "transfer from " << i->start_pkt_no << " to " << i->end_pkt_no << ", last " << duration_cast<chrono::microseconds>(i->end - i->start).count() << " us." << endl;
+#endif
 }
 
 auto& MySniffer::get_addr_set() {
@@ -33,10 +41,88 @@ auto& MySniffer::get_time_heap() {
     return this->time_minheap;
 }
 
+unordered_map<address_type, microseconds> MySniffer::get_airtime() {
+    auto t_now = chrono::high_resolution_clock::now();
+    unordered_map<address_type, microseconds> statistics;
+    bool single_user = false;
+    active_user_number = 0;
+    active_users.clear();
+    if (cur_tf) {
+        auto cur_tf_duration = duration_cast<microseconds>(t_now-cur_tf->start).count();
+        if (cur_tf_duration > AIRTIME_WINDOW) {
+            single_user = true;
+            cur_tf_duration = AIRTIME_WINDOW;
+        }
+        if (cur_tf_duration > 0) {
+            ++active_user_number;
+            active_users.emplace(cur_tf->addr);
+            statistics[cur_tf->addr] = microseconds(cur_tf_duration);
+        }
+    }
+    if (!single_user) {
+        for (auto i = duration_records.rbegin(); i!= duration_records.rend(); i++) {
+            auto temp_duration = duration_cast<microseconds>(t_now-i->end).count();
+            auto window_left = t_now-microseconds(AIRTIME_WINDOW);
+            if (temp_duration > AIRTIME_WINDOW)
+                break;
+            else {
+                if (active_users.find(i->addr) == active_users.end())
+                    ++active_user_number;
+                active_users.emplace(i->addr);
+                auto dur = duration_cast<microseconds>(i->end-window_left);
+                if (i->start > window_left)
+                    dur = duration_cast<microseconds>(i->end-i->start);
+                if (dur.count() <= 0)
+                    continue;
+                if (statistics.find(i->addr) != statistics.end())
+                    statistics[i->addr] += dur;
+                else
+                    statistics[i->addr] = dur;
+            }
+        }
+    }
+    return statistics;
+}
+
+void MySniffer::write_airtime() {
+    auto statistics = get_airtime();
+    double avg_rate = (double)(active_user_number > 0 ? rate/active_user_number : rate);
+// #ifdef DEBUG
+    cout << "rate: " << avg_rate
+        << ", active_user_number: " << active_user_number;
+        // << ", active_user: " << active_users
+    cout << ". Airtime occupation: ";
+// #endif
+    rate_fs.open(RATE_FILE, ios::out);
+    users_fs.open(USERS_FILE, ios::out);
+    rate_fs << avg_rate;
+    users_fs << active_user_number;
+    Json::Value occupy;
+    for (auto i = statistics.begin(); i != statistics.end(); i++)
+        // cout << i->first << ": " << i->second.count() << ", occupation: "<< ((double)(i->second.count())/AIRTIME_WINDOW)*100 << "% ";
+        occupy[i->first.to_string()] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
+    if (!occupy.empty()) {
+        occupancy_fs.open(OCCUPANCY_FILE, ios::out);
+        Json::FastWriter writer;
+        occupancy_fs << writer.write(occupy);
+        occupancy_fs.close();
+    }
+    rate_fs.close();
+    users_fs.close();
+    cout << occupy.toStyledString() << endl;
+}
+
 bool MySniffer::start_record_duration(address_type addr) {
     if (cur_tf)
-        return false;
+        if (cur_tf->addr == addr) {
+            cur_tf->start = chrono::high_resolution_clock::now();
+            cur_tf->start_pkt_no = pkt_count;
+            return true;
+        }
+        else 
+            return false;
     cur_tf = new TransferDuration(addr, chrono::high_resolution_clock::now());
+    cur_tf->start_pkt_no = pkt_count;
     return true;
 }
 
@@ -44,6 +130,7 @@ bool MySniffer::try_end_record_duration() {
     if (!cur_tf)
         return false;
     cur_tf->end = chrono::high_resolution_clock::now();
+    cur_tf->end_pkt_no = pkt_count;
     duration_records.push_back(std::move(*cur_tf));
     cur_tf = nullptr;
     return true;
@@ -54,8 +141,10 @@ bool MySniffer::callback(PDU &pdu) {
     const uint8_t dot11_type = dot11_header.type();
     const RadioTap &radio = pdu.rfind_pdu<RadioTap>();
     ++pkt_count;
-    if (pkt_count > 100000)
+    if (pkt_count > 10000)
         return false;
+    
+    writer.write(pdu);
 
     switch (dot11_type) {
         case 0:
@@ -71,6 +160,7 @@ bool MySniffer::callback(PDU &pdu) {
             cout << "Novalid packet: " << dot11_type << endl;
             break;
     }
+    write_airtime();
     return true;
 }
 
@@ -143,21 +233,24 @@ void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
         remove_expired_records(*this);
         time_minheap.emplace(data_frame.src_addr(), chrono::high_resolution_clock::now());
         addr_set.insert(data_frame.src_addr());
-        // cout << "There are " << addr_set.size() << " in 1ms." <<endl;
-        // addr_set.insert(data_frame.dst_addr());
+        // if (flags & (1 << 23)) { // HE information is present
+            
+        // }
         if ((flags & RadioTap::RATE) && (flags & RadioTap::ANTENNA)) {
-            uint8_t rate = radio.rate();
-            if (!rate) {
-                cout << to_string(dot11_subtype) << "not have rate, its header size is: " << radio.header_size() << endl;
+            uint8_t temp_rate = radio.rate();
+            // 8-11 refer to QosData frame
+            if (dot11_subtype >= 8 && dot11_subtype <= 11) {
+                rate = temp_rate;
+                cout << "Get rate from packet " << pkt_count << endl;
             }
-#ifdef DEBUG
-            if (rate)
-            cout << "Rate in radio is: " << to_string(rate/2)
+// #ifdef DEBUG
+            if (temp_rate)
+            cout << "Rate in radio is: " << to_string(temp_rate/2)
                 << ". Antenna is: " << to_string(radio.antenna())
                 //  << ". MCS is: " << radio.mcs().mcs 
                 << ". data subtype: " << to_string(dot11_subtype)
                 << endl;
-#endif
+// #endif
         }
 #ifdef DEBUG
         cout << "SA: " << data_frame.src_addr() << endl
