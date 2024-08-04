@@ -118,7 +118,7 @@ while True:
         
         fig.autofmt_xdate()  # 自动格式化日期
         plt.draw()
-        plt.pause(1)  # 暂停1秒
+        plt.pause(0.5)  # 暂停1秒
 
     #except Exception as e:
     #    print(f"读取数据时发生错误: {e}")

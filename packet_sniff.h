@@ -10,17 +10,13 @@
 #include <unordered_map>
 #include <queue>
 
+#include "Constant.h"
+
 using namespace Tins;
 using namespace std;
 using namespace chrono;
 
 typedef Dot11::address_type address_type;
-#define SNIFF_ADDR "4c:10:d5:3b:bf:0f"
-#define EXPERIED_TIME 1000 // 1ms
-#define AIRTIME_WINDOW 100000 //100ms
-#define RATE_FILE "Rate.txt"
-#define USERS_FILE "Users.txt"
-#define OCCUPANCY_FILE "Occupancy.json"
 
 struct AirtimeOccupy {
     address_type addr;
@@ -59,7 +55,7 @@ private:
     void data_handler(const Dot11 &pdu, const RadioTap& radio);
     void control_handler(const Dot11 &pdu, const RadioTap& radio);
     int64_t pkt_count;
-    unsigned rate;
+    double rate;
     TransferDuration *cur_tf;
     vector<TransferDuration> duration_records;
     unordered_set<address_type> active_users;

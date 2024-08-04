@@ -16,7 +16,7 @@ MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0), rate(0
     config.set_rfmon(true);
 
     Sniffer sniffer(iface, config);
-    // FileSniffer sniffer("/home/litonglab/Downloads/file.cap");
+    // FileSniffer sniffer("/home/litonglab/Downloads/sniff_802/80211ax.pcap");
     sniffer.sniff_loop(make_sniffer_handler(this, &MySniffer::callback));
 }
 
@@ -87,19 +87,17 @@ unordered_map<address_type, microseconds> MySniffer::get_airtime() {
 void MySniffer::write_airtime() {
     auto statistics = get_airtime();
     double avg_rate = (double)(active_user_number > 0 ? rate/active_user_number : rate);
-// #ifdef DEBUG
+#ifdef DEBUG
     cout << "rate: " << avg_rate
         << ", active_user_number: " << active_user_number;
         // << ", active_user: " << active_users
-    cout << ". Airtime occupation: ";
-// #endif
+#endif
     rate_fs.open(RATE_FILE, ios::out);
     users_fs.open(USERS_FILE, ios::out);
     rate_fs << avg_rate;
     users_fs << active_user_number;
     Json::Value occupy;
     for (auto i = statistics.begin(); i != statistics.end(); i++)
-        // cout << i->first << ": " << i->second.count() << ", occupation: "<< ((double)(i->second.count())/AIRTIME_WINDOW)*100 << "% ";
         occupy[i->first.to_string()] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
     if (!occupy.empty()) {
         occupancy_fs.open(OCCUPANCY_FILE, ios::out);
@@ -109,7 +107,10 @@ void MySniffer::write_airtime() {
     }
     rate_fs.close();
     users_fs.close();
-    cout << occupy.toStyledString() << endl;
+#ifdef DEBUG
+    cout << ". Airtime occupation: "
+         << occupy.toStyledString() << endl;
+#endif
 }
 
 bool MySniffer::start_record_duration(address_type addr) {
@@ -141,10 +142,12 @@ bool MySniffer::callback(PDU &pdu) {
     const uint8_t dot11_type = dot11_header.type();
     const RadioTap &radio = pdu.rfind_pdu<RadioTap>();
     ++pkt_count;
-    if (pkt_count > 10000)
+
+#ifdef TEST
+    if (pkt_count > 1000000)
         return false;
-    
     writer.write(pdu);
+#endif
 
     switch (dot11_type) {
         case 0:
@@ -169,18 +172,6 @@ void MySniffer::mangement_handler(const Dot11& pdu, const RadioTap& radio) {
     const Dot11ManagementFrame &manage_frame = pdu.rfind_pdu<Dot11ManagementFrame>();
     if (cur_tf && (manage_frame.addr1() == SNIFF_ADDR || manage_frame.addr2() == SNIFF_ADDR || manage_frame.addr3() == SNIFF_ADDR))
         try_end_record_duration();
-    RadioTap::PresentFlags flags = radio.present();
-    if ((flags & RadioTap::RATE) && (flags & RadioTap::ANTENNA)) {
-        uint8_t rate = radio.rate();
-// #ifdef DEBUG
-//         if (rate)
-//             cout << "Rate in radio is: " << to_string(rate/2)
-//                 << ". Antenna is: " << to_string(radio.antenna())
-//                 //  << ". MCS is: " << radio.mcs().mcs 
-//                 << ". manage subtype: " << to_string(dot11_subtype)
-//                 << endl;
-// #endif
-    }
     switch(dot11_subtype) {
         default:
             break;
@@ -194,8 +185,6 @@ void MySniffer::control_handler(const Dot11 &pdu, const RadioTap& radio) {
         try_end_record_duration();
     if (dot11_subtype == 11) { // 11 represents to RTS frame
         const Dot11RTS &rts_frame = control_frame.rfind_pdu<Dot11RTS>();
-        // addr1()--> dst addr, target--> src
-        // cout << "Got RTS frame " << rts_frame.addr1() << " " << rts_frame.target_addr() << endl;
         if (rts_frame.addr1() == SNIFF_ADDR) {
             start_record_duration(rts_frame.target_addr());
         } else if (rts_frame.target_addr() == SNIFF_ADDR) {
@@ -224,7 +213,6 @@ static void remove_expired_records(MySniffer &snif) {
 void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
     const uint8_t &dot11_subtype = pdu.subtype();
     const Dot11Data &data_frame = pdu.rfind_pdu<Dot11Data>();
-    // const RadioTap::mcs_type &tempmsc = radio.mcs();
     RadioTap::PresentFlags flags = radio.present();
     
     if (data_frame.bssid_addr() == SNIFF_ADDR) {
@@ -233,32 +221,45 @@ void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
         remove_expired_records(*this);
         time_minheap.emplace(data_frame.src_addr(), chrono::high_resolution_clock::now());
         addr_set.insert(data_frame.src_addr());
-        // if (flags & (1 << 23)) { // HE information is present
-            
-        // }
-        if ((flags & RadioTap::RATE) && (flags & RadioTap::ANTENNA)) {
+        if (flags & RadioTap::HE) { // HE information is present
+            RadioTap::he_type he_info = radio.he();
+            unsigned mcs_index = ((he_info.data3 & 0x0F00) >> 8);
+            unsigned ru_alloc = he_info.data5 & 0x000F;
+            /* RU allocation value
+            0: 20, 1: 40, 2: 80, 3: 160/80+80, 
+            4: 26tone RU, 5: 52tone RU, 6: 106-tone RU, 7: 242-tone RU, 
+            8: 484-tone RU, 9: 996-tone RU, 10: 2x996-tone RU
+            */
+            unsigned gi = ((he_info.data5 & 0x0030) >> 4); // 0: 0.8us, 1: 1.6us, 2: 3.2us, 3: reserved
+            unsigned ss_num = he_info.data6 & 0x000F; // 0: unknown, 1: 1, etc..
+            if (ss_num != 0 && (gi >= 0 && gi < 3) && (ru_alloc >= 0 && ru_alloc <= 10) && (mcs_index >= 0 && mcs_index <= 11)) {
+                rate = ss_num * IEEE80211AX_MCS_TABLE[mcs_index][ru_alloc][gi];
+#ifdef DEBUG
+                cout << "Get rate " << rate <<" from 802.11ax packet: " << pkt_count << ", mcs_index: " << mcs_index << ", ru_alloc: " << ru_alloc << ", gi: " << gi << ", ss_num: " << ss_num << endl;
+#endif
+            }
+        } else if ((flags & RadioTap::RATE) && (flags & RadioTap::ANTENNA)) {
             uint8_t temp_rate = radio.rate();
             // 8-11 refer to QosData frame
             if (dot11_subtype >= 8 && dot11_subtype <= 11) {
-                rate = temp_rate;
-                cout << "Get rate from packet " << pkt_count << endl;
+                rate = temp_rate/2;
             }
-// #ifdef DEBUG
+#ifdef DEBUG
             if (temp_rate)
-            cout << "Rate in radio is: " << to_string(temp_rate/2)
-                << ". Antenna is: " << to_string(radio.antenna())
-                //  << ". MCS is: " << radio.mcs().mcs 
-                << ". data subtype: " << to_string(dot11_subtype)
-                << endl;
-// #endif
+                cout << "Rate in radiotap is: " << to_string(temp_rate/2)
+                    << ". Antenna is: " << to_string(radio.antenna())
+                    //  << ". MCS is: " << radio.mcs().mcs 
+                    << ". data subtype: " << to_string(dot11_subtype)
+                    << endl;
+    #endif
         }
 #ifdef DEBUG
         cout << "SA: " << data_frame.src_addr() << endl
-         << "DA: " << data_frame.dst_addr() << endl
-         << "BSSID: " << data_frame.bssid_addr() << endl
-         << "Addr1: " << data_frame.addr1() << endl
-         << "Addr2: " << data_frame.addr2() << endl
-         << "Addr3: " << data_frame.addr3() << endl;
+            << "DA: " << data_frame.dst_addr() << endl
+            << "BSSID: " << data_frame.bssid_addr() << endl
+            << "Addr1: " << data_frame.addr1() << endl
+            << "Addr2: " << data_frame.addr2() << endl
+            << "Addr3: " << data_frame.addr3() << endl;
     
     if (!addr_set.empty())
         for (auto i = addr_set.begin(); i != addr_set.end(); i++)
