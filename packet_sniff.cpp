@@ -9,14 +9,14 @@ using namespace Tins;
 
 typedef Dot11::address_type address_type;
 
-MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0), rate(0), active_user_number(0), writer("/home/litonglab/Downloads/sniffer_records.pcap", DataLinkType<RadioTap>()) {
+MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0), rate(0), active_user_number(0), writer(WRITE_FILE, DataLinkType<RadioTap>()) {
     SnifferConfiguration config;
     config.set_immediate_mode(true);
     config.set_promisc_mode(true);
     config.set_rfmon(true);
 
     Sniffer sniffer(iface, config);
-    // FileSniffer sniffer("/home/litonglab/Downloads/sniff_802/80211ax.pcap");
+    // FileSniffer sniffer(INPUT_PCAP_FILE);
     sniffer.sniff_loop(make_sniffer_handler(this, &MySniffer::callback));
 }
 

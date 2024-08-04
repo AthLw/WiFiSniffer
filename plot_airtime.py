@@ -35,7 +35,6 @@ def read_occupancy(file_path):
         except ValueError as e:
             occupancy = {}
             print("read json file error: {}".format(e))
-            copyfile(file_path, "/home/litonglab/Downloads/sniff_802/fake.json")
     return occupancy
 
 # 文件路径（根据实际情况修改）
@@ -43,15 +42,17 @@ rate_file_path = 'Rate.txt'
 users_file_path = 'Users.txt'
 occupancy_file_path = 'Occupancy.json'
 
-max_users = 4
+max_users = 6
 
 # 初始化数据
 times = []
 rates = []
 users = []
-occupancies = [[],[],[],[]]
+occupancies = []
+for _ in range(max_users):
+    occupancies.append([])
 addrs = []
-colors = ['red', 'green', 'yellow', 'blue']
+colors = ['red', 'green', 'yellow', 'blue', 'deeppink', 'grey', 'black', 'purple', 'gold', 'brown']
 
 # 初始化图表
 plt.ion()  # 打开交互模式

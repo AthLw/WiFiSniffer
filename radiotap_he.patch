@@ -1,0 +1,132 @@
+diff --git a/include/tins/radiotap.h b/include/tins/radiotap.h
+index 0a38cfa..94d0e17 100644
+--- a/include/tins/radiotap.h
++++ b/include/tins/radiotap.h
+@@ -103,7 +103,8 @@ public:
+         DATA_RETRIES        = 1 << 17,
+         XCHANNEL            = 1 << 18,
+         CHANNEL_PLUS        = 1 << 18,
+-        MCS                 = 1 << 19
++        MCS                 = 1 << 19,
++        HE                  = 1 << 23
+     };
+     
+     /**
+@@ -141,6 +142,19 @@ public:
+         uint8_t max_power;
+     } TINS_END_PACK;
+     
++    /**
++     * \brief The type used to represent the HE information field
++     */
++    TINS_BEGIN_PACK
++    struct he_type {
++        uint16_t data1;
++        uint16_t data2;
++        uint16_t data3;
++        uint16_t data4;
++        uint16_t data5;
++        uint16_t data6;
++    } TINS_END_PACK;
++
+     /**
+      * The type used to store RadioTap options
+      */
+@@ -279,6 +293,12 @@ public:
+      * \param new_rx_flag The MCS retries.
+      */
+     void mcs(const mcs_type& new_mcs);
++
++    /**
++     * \brief Setter for the HE field.
++     * \param new_he The HE retries.
++     */
++    void he(he_type new_he);
+     
+     /* Getters */
+     
+@@ -390,6 +410,12 @@ public:
+      */
+     mcs_type mcs() const;
+ 
++    /**
++     * \brief Getter for the HE field.
++     * \return The HE retries.
++     */
++    he_type he() const;
++
+     /**
+      * \brief Getter for the present bit fields.
+      * 
+diff --git a/src/radiotap.cpp b/src/radiotap.cpp
+index 009c2eb..b79c154 100644
+--- a/src/radiotap.cpp
++++ b/src/radiotap.cpp
+@@ -194,6 +194,18 @@ void RadioTap::mcs(const mcs_type& new_mcs) {
+     add_option(RadioTap::option(MCS, sizeof(buffer), buffer));
+ }
+ 
++void RadioTap::he(he_type new_he) {
++    uint8_t buffer[sizeof(new_he)];
++    new_he.data1 = Endian::host_to_le(new_he.data1);
++    new_he.data2 = Endian::host_to_le(new_he.data2);
++    new_he.data3 = Endian::host_to_le(new_he.data3);
++    new_he.data4 = Endian::host_to_le(new_he.data4);
++    new_he.data5 = Endian::host_to_le(new_he.data5);
++    new_he.data6 = Endian::host_to_le(new_he.data6);
++    memcpy(buffer, &new_he, sizeof(new_he));
++    add_option(RadioTap::option(HE, sizeof(buffer), buffer));
++}
++
+ RadioTap::PresentFlags RadioTap::present() const {
+     uint32_t output = 0;
+     RadioTapParser parser(options_payload_);
+@@ -291,6 +303,13 @@ RadioTap::mcs_type RadioTap::mcs() const {
+     return output;
+ }
+ 
++RadioTap::he_type RadioTap::he() const {
++    const option opt = do_find_option(HE);
++    he_type output;
++    memcpy(&output, opt.data_ptr(), sizeof(output));
++    return output;
++}
++
+ uint8_t RadioTap::db_signal() const {
+     return do_find_option(DB_SIGNAL).to<uint8_t>();
+ }
+diff --git a/src/utils/radiotap_parser.cpp b/src/utils/radiotap_parser.cpp
+index a7519d4..69c999b 100644
+--- a/src/utils/radiotap_parser.cpp
++++ b/src/utils/radiotap_parser.cpp
+@@ -61,7 +61,9 @@ const RadioTapParser::FieldMetadata RadioTapParser::RADIOTAP_METADATA[] = {
+     { 8, 4 }, // CHANNEL_PLUS
+     { 3, 1 }, // MCS
+     { 8, 4 }, // A-MPDU status
+-    { 12, 2 } // VHT
++    { 12, 2 }, // VHT
++    { 12, 8 }, // TIMESTAMP
++    { 12, 2 } // HE
+ };
+ 
+ const uint32_t RadioTapParser::MAX_RADIOTAP_FIELD = sizeof(RADIOTAP_METADATA) /
+@@ -93,7 +95,8 @@ struct RadioTapFlags {
+         data_retries:1,
+         channel_plus:1,
+         mcs:1,
+-        reserved2:4,
++        reserved2:3,
++        he:1,
+ 
+         reserved3:7,
+         ext:1;
+@@ -120,7 +123,8 @@ struct RadioTapFlags {
+         db_tx_attenuation:1,
+         tx_attenuation:1,
+ 
+-        reserved2:4,
++        he:1,
++        reserved2:3,
+         mcs:1,
+         channel_plus:1,
+         data_retries:1,

@@ -1,9 +1,14 @@
+#ifndef __MYSNIFF_CONSTANTS__
+#define __MYSNIFF_CONSTANTS__
+
 #define SNIFF_ADDR "4c:10:d5:3b:bf:0f"
 #define EXPERIED_TIME 1000 // 1ms
 #define AIRTIME_WINDOW 500000 //500ms
 #define RATE_FILE "Rate.txt"
 #define USERS_FILE "Users.txt"
 #define OCCUPANCY_FILE "Occupancy.json"
+#define WRITE_FILE "sniffer_records.pcap"
+#define INPUT_PCAP_FILE "80211ax.pcap"
 
 double IEEE80211AX_MCS_TABLE[12][10][3] = {
     {
@@ -151,3 +156,5 @@ double IEEE80211AX_MCS_TABLE[12][10][3] = {
         {600.5, 567.1, 510.4}
     }
 };
+
+#endif
