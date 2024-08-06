@@ -56,6 +56,7 @@ private:
     void control_handler(const Dot11 &pdu, const RadioTap& radio);
     int64_t pkt_count;
     double rate;
+    unordered_map<address_type, double> rate_map;
     TransferDuration *cur_tf;
     vector<TransferDuration> duration_records;
     unordered_set<address_type> active_users;

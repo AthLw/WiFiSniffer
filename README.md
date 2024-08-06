@@ -28,7 +28,7 @@ pip install matplotlib
 bash ./install.sh
 ```
 
-> Note: Before running program, you should confirm that the configuration has been modified. The configuration includes `SNIFF_ADDR` and `AIRTIME_WINDOW` in `Constant.h` file. And `max_users` in `plot_airtime.py` could be changed, but the max users in our program should not exceed 10.(which is determined by the number of predefine colors.)
+> Note: Before running program, you should confirm that the configuration has been modified. The configuration includes `SNIFF_ADDR`, `SNIFF_IFACE` and `AIRTIME_WINDOW` in `Constant.h` file. And `max_users` in `plot_airtime.py` could be changed, but the max users in our program should not exceed 10.(which is determined by the number of predefine colors.)
 
 ### Run
 

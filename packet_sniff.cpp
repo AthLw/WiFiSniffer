@@ -92,21 +92,28 @@ void MySniffer::write_airtime() {
         << ", active_user_number: " << active_user_number;
         // << ", active_user: " << active_users
 #endif
-    rate_fs.open(RATE_FILE, ios::out);
     users_fs.open(USERS_FILE, ios::out);
-    rate_fs << avg_rate;
     users_fs << active_user_number;
+    users_fs.close();
+    Json::Value temp_rate_map;
     Json::Value occupy;
-    for (auto i = statistics.begin(); i != statistics.end(); i++)
-        occupy[i->first.to_string()] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
+    for (auto i = statistics.begin(); i != statistics.end(); i++) {
+        auto key = i->first.to_string();
+        if (rate_map.find(key) != rate_map.end())
+            temp_rate_map[key] = (double)(active_user_number > 0 ? rate_map[key]/active_user_number : rate_map[key]);
+        occupy[key] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
+    }
+    Json::FastWriter writer;
     if (!occupy.empty()) {
         occupancy_fs.open(OCCUPANCY_FILE, ios::out);
-        Json::FastWriter writer;
         occupancy_fs << writer.write(occupy);
         occupancy_fs.close();
     }
-    rate_fs.close();
-    users_fs.close();
+    if (!temp_rate_map.empty()) {
+        rate_fs.open(RATE_FILE, ios::out);
+        rate_fs << writer.write(temp_rate_map);
+        rate_fs.close();
+    }
 #ifdef DEBUG
     cout << ". Airtime occupation: "
          << occupy.toStyledString() << endl;
@@ -234,6 +241,7 @@ void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
             unsigned ss_num = he_info.data6 & 0x000F; // 0: unknown, 1: 1, etc..
             if (ss_num != 0 && (gi >= 0 && gi < 3) && (ru_alloc >= 0 && ru_alloc <= 10) && (mcs_index >= 0 && mcs_index <= 11)) {
                 rate = ss_num * IEEE80211AX_MCS_TABLE[mcs_index][ru_alloc][gi];
+                rate_map[data_frame.src_addr()] = rate;
 #ifdef DEBUG
                 cout << "Get rate " << rate <<" from 802.11ax packet: " << pkt_count << ", mcs_index: " << mcs_index << ", ru_alloc: " << ru_alloc << ", gi: " << gi << ", ss_num: " << ss_num << endl;
 #endif
@@ -243,6 +251,7 @@ void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
             // 8-11 refer to QosData frame
             if (dot11_subtype >= 8 && dot11_subtype <= 11) {
                 rate = temp_rate/2;
+                rate_map[data_frame.src_addr()] = rate;
             }
 #ifdef DEBUG
             if (temp_rate)
@@ -269,6 +278,6 @@ void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
 }
 
 int main() {
-    MySniffer mysniffer("mon0");
+    MySniffer mysniffer(SNIFF_IFACE);
     return 0;
 }

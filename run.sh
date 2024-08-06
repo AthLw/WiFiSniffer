@@ -1,6 +1,6 @@
 g++ packet_sniff.cpp -o sniff -ltins -ljsoncpp
 
-sudo touch Rate.txt
+sudo touch Rate.json
 sudo touch Users.txt
 sudo touch Occupancy.json
 
