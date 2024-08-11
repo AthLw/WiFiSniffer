@@ -4,7 +4,7 @@ sudo touch Rate.json
 sudo touch Users.txt
 sudo touch Occupancy.json
 
-python plot_airtime.py 1 > /dev/null &
+python3 plot_airtime.py & #1 > /dev/null &
 sleep 1
 
 sudo ./sniff

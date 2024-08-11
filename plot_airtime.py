@@ -58,9 +58,11 @@ times = []
 rates = []
 users = []
 occupancies = []
+signals = []
 for _ in range(max_users):
     rates.append([])
     occupancies.append([])
+    signals.append([])
 addrs = []
 addrs_rate = []
 colors = ['red', 'green', 'yellow', 'blue', 'deeppink', 'grey', 'black', 'purple', 'gold', 'brown']
@@ -84,22 +86,29 @@ while True:
         if rate:
             rate_notnull_list = []
             for k,v in rate.items():
+                if not v:
+                    continue
                 now_users = len(addrs_rate)
                 if k not in addrs_rate and now_users < max_users:
                     addrs_rate.append(k)
-                    rates[now_users].append(v)
+                    rates[now_users].append(v.get("rate", 0))
+                    signals[now_users].append(v.get("signal", 0))
                     rate_notnull_list.append(now_users)
                 else:
                     rindex = addrs_rate.index(k)
                     if rindex >= 0:
-                        rates[rindex].append(v)
+                        rates[rindex].append(v.get("rate", 0))
+                        signals[rindex].append(v.get("signal", 0))
                         rate_notnull_list.append(rindex)
             for i in range(max_users):
                 if i not in rate_notnull_list:
                     rates[i].append(0)
+                    signals[i].append(0)
         else:
             for r in rates:
                 r.append(0)
+            for s in signals:
+                s.append(0)
         
         if occupancy:
             notnull_list = []
@@ -129,6 +138,7 @@ while True:
             users.pop(0)
             for i in range(max_users):
                 occupancies[i].pop(0)
+        print(signals)
 
         # 更新图表
         for ax in axs:

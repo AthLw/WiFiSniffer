@@ -9,6 +9,8 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <queue>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #include "Constant.h"
 
@@ -57,6 +59,7 @@ private:
     int64_t pkt_count;
     double rate;
     unordered_map<address_type, double> rate_map;
+    unordered_map<address_type, int8_t> signal_map;
     TransferDuration *cur_tf;
     vector<TransferDuration> duration_records;
     unordered_set<address_type> active_users;
@@ -67,6 +70,8 @@ private:
     fstream rate_fs;
     fstream users_fs;
     fstream occupancy_fs;
+    int feedback_file_handler;
+    double *feedback_addr;
 };
 
 #endif
