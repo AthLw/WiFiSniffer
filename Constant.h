@@ -10,6 +10,8 @@
 #define WRITE_FILE "sniffer_records.pcap"
 #define INPUT_PCAP_FILE "80211ax.pcap"
 #define SNIFF_IFACE "mon0"
+#define LISTEN_ADDR "bc:d0:74:16:c1:78"
+#define DECISION_FILE "/home/litonglab/Documents/WiFiCC/desired_rate"
 
 double IEEE80211AX_MCS_TABLE[12][10][3] = {
     {

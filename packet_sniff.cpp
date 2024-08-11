@@ -1,6 +1,7 @@
 #include <tins/tins.h>
 #include <chrono>
 #include <json/json.h>
+#include <unistd.h>
 
 #include "packet_sniff.h"
 
@@ -10,6 +11,17 @@ using namespace Tins;
 typedef Dot11::address_type address_type;
 
 MySniffer::MySniffer(const string &iface) :cur_tf(nullptr), pkt_count(0), rate(0), active_user_number(0), writer(WRITE_FILE, DataLinkType<RadioTap>()) {
+    feedback_file_handler = open(DECISION_FILE, O_RDWR|O_CREAT, 0644);
+    feedback_addr = nullptr;
+    if (feedback_file_handler == -1) {
+        cout << "Open shared memory file " << DECISION_FILE << " failed." << endl;        
+    } else {
+        feedback_addr = (double*)mmap(NULL, sizeof(double), PROT_WRITE, MAP_SHARED, feedback_file_handler, 0);
+        if (feedback_addr == MAP_FAILED) {
+            cout << "Map shared memory failed." << endl;
+        }
+    }
+
     SnifferConfiguration config;
     config.set_immediate_mode(true);
     config.set_promisc_mode(true);
@@ -27,6 +39,10 @@ MySniffer::~MySniffer() {
         users_fs.close();
     if (occupancy_fs.is_open())
         occupancy_fs.close();
+    if (feedback_addr)
+        munmap(feedback_addr, sizeof(double));
+    if (feedback_file_handler != -1)
+        close(feedback_file_handler);
 #ifdef DEBUG
     for (auto i = duration_records.begin(); i != duration_records.end(); i++) 
         cout << i->addr << "transfer from " << i->start_pkt_no << " to " << i->end_pkt_no << ", last " << duration_cast<chrono::microseconds>(i->end - i->start).count() << " us." << endl;
@@ -99,8 +115,12 @@ void MySniffer::write_airtime() {
     Json::Value occupy;
     for (auto i = statistics.begin(); i != statistics.end(); i++) {
         auto key = i->first.to_string();
-        if (rate_map.find(key) != rate_map.end())
-            temp_rate_map[key] = (double)(active_user_number > 0 ? rate_map[key]/active_user_number : rate_map[key]);
+        if (rate_map.find(key) != rate_map.end()) {
+            auto r = (double)(active_user_number > 0 ? rate_map[key]/active_user_number : rate_map[key]);
+            temp_rate_map[key] = r;
+            if (feedback_addr && key == LISTEN_ADDR)
+                *feedback_addr = r;
+        }
         occupy[key] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
     }
     Json::FastWriter writer;
@@ -112,7 +132,7 @@ void MySniffer::write_airtime() {
     if (!temp_rate_map.empty()) {
         rate_fs.open(RATE_FILE, ios::out);
         rate_fs << writer.write(temp_rate_map);
-        rate_fs.close();
+        rate_fs.close();  
     }
 #ifdef DEBUG
     cout << ". Airtime occupation: "

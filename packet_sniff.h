@@ -9,6 +9,8 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <queue>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #include "Constant.h"
 
@@ -67,6 +69,8 @@ private:
     fstream rate_fs;
     fstream users_fs;
     fstream occupancy_fs;
+    int feedback_file_handler;
+    double *feedback_addr;
 };
 
 #endif
