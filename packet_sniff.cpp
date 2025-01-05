@@ -41,6 +41,10 @@ MySniffer::~MySniffer() {
         users_fs.close();
     if (occupancy_fs.is_open())
         occupancy_fs.close();
+    if (occupancy_user.is_open())
+        occupancy_user.close();
+    if (occupancy_user.is_open())
+        occupancy_user.close();
     if (feedback_addr)
         munmap(feedback_addr, sizeof(double));
     if (feedback_file_handler != -1)
@@ -124,21 +128,41 @@ void MySniffer::write_airtime() {
     users_fs.open(USERS_FILE, ios::out);
     users_fs << active_user_number;
     users_fs.close();
-    fstream output_fs("./all_records.txt", ios::out|ios::app);
+    fstream output_fs("./new_records.txt", ios::out|ios::app);
     output_fs << get_time_ms() << " | " << to_string(active_user_number) << " |";
     Json::Value temp_rate_map;
     Json::Value output_record;
     Json::Value occupy;
+    int64_t time_sum = 0;
+    for (auto i = statistics.begin(); i != statistics.end(); i++) {
+        auto key = i->first.to_string();
+        time_sum += i->second.count();
+    }
+    double max_rate = 0;
+    for (auto i = rate_map.begin(); i != rate_map.end(); i++) {
+        if (max_rate < (*i).second) 
+            max_rate = (*i).second;
+    }
     for (auto i = statistics.begin(); i != statistics.end(); i++) {
         auto key = i->first.to_string();
         Json::Value temp_map;
         Json::Value temp_record;
+        occupy[key] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
         if (rate_map.find(key) != rate_map.end()) {
-            auto r = (double)(active_user_number > 0 ? rate_map[key]/active_user_number : rate_map[key]);
-            temp_map["rate"] = r;
+            // auto r = (double)(active_user_number > 0 ? rate_map[key]/active_user_number : rate_map[key]);
+            // temp_map["rate"] = r;
+            auto r = (double)(active_user_number > 0 ? max_rate/active_user_number : rate_map[key]);
+            temp_map["rate"] = rate_map[key];
             temp_record["rate"] = r;
-            if (feedback_addr && key == LISTEN_ADDR)
-                *feedback_addr = r;
+            if (feedback_addr && key == LISTEN_ADDR) {
+                double target_occupy = LAMBDA * ( active_user_number > 0 ? (1.0 / active_user_number) : 1.0);
+                if (occupy[key] >= target_occupy)
+                    *feedback_addr = r;
+                else {
+                    *feedback_addr += (target_occupy - occupy[key].asDouble())*r;
+                }
+
+            }
         }
         if (signal_map.find(key) != signal_map.end()) {
             temp_map["signal"] = signal_map[key];
@@ -146,9 +170,20 @@ void MySniffer::write_airtime() {
             // cout << "signal: " << to_string(signal_map[key]) << "dbm of addr: " << key << endl;
         }
         temp_rate_map[key] = temp_map;
-        occupy[key] = ((double)(i->second.count())/AIRTIME_WINDOW)*100;
         temp_record["occupy"] = occupy[key];
         output_record[key] = temp_record;
+
+        Json::FastWriter writer;   
+        occupancy_user.open("data/" + key + "_occupy.json", ios::out|ios::app);
+        rate_user.open("data/" + key + "_rate.json", ios::out|ios::app);
+        signal_user.open("data/" + key + "_signal.json", ios::out|ios::app);
+        occupancy_user<< get_time_ms() << " | " << writer.write(occupy[key]);
+        rate_user<<get_time_ms()<<" | "<<writer.write(temp_rate_map[key]["rate"]);
+        signal_user<<get_time_ms()<<" | "<<writer.write(temp_rate_map[key]["signal"]);
+        occupancy_user.close();
+        rate_user.close();
+        signal_user.close();
+
     }
     Json::FastWriter writer;
     if (!output_record.empty()) {
@@ -336,8 +371,7 @@ void MySniffer::data_handler(const Dot11 &pdu, const RadioTap& radio) {
 }
 
 int main() {
+    cerr<<"start"<<endl;
     MySniffer mysniffer(SNIFF_IFACE);
-    cerr<<"11"<<endl;
-    printf("111");
     return 0;
 }

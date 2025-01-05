@@ -70,6 +70,9 @@ private:
     fstream rate_fs;
     fstream users_fs;
     fstream occupancy_fs;
+    fstream occupancy_user;
+    fstream rate_user;
+    fstream signal_user;
     int feedback_file_handler;
     double *feedback_addr;
 };

@@ -12,7 +12,7 @@
 #define SNIFF_IFACE "mon0"
 #define LISTEN_ADDR "00:c0:ca:b6:57:4d"
 #define DECISION_FILE "/home/litonglab/Documents/WiFiCC/desired_rate"
-
+#define LAMBDA 1.0 // represent param
 double IEEE80211AX_MCS_TABLE[12][10][3] = {
     {
         {8.6, 8.1, 7.3},
